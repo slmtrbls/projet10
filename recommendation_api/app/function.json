@@ -24,11 +24,6 @@
       "name": "model_blob",
       "path": "models/svd_best_model_pca.pkl",
       "connection": "AzureWebJobsStorage"
-    },
-    {
-      "type": "http",
-      "direction": "out",
-      "name": "res"
     }
   ]
 }
