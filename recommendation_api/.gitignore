@@ -1,0 +1,11 @@
+local.settings.json
+.python_packages/
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.idea/
+.vscode/
+*.zip
+
