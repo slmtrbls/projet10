@@ -34,7 +34,7 @@ jobs:
           rm -rf recommendation_api/.python_packages
           python -m pip install --upgrade pip
           mkdir -p recommendation_api/.python_packages/lib/site-packages
-          pip install --target recommendation_api/.python_packages/lib/site-packages azure-functions==1.15.0 numpy==1.26.4 pandas==2.2.2 scipy==1.11.4 joblib==1.3.2 cryptography==42.0.5 azure-storage-blob==12.19.1
+          pip install --upgrade --target recommendation_api/.python_packages/lib/site-packages azure-functions==1.15.0 numpy==1.26.4 pandas==2.2.2 scipy==1.11.4 joblib==1.3.2 cryptography==42.0.5 azure-storage-blob==12.19.1
           pip install --target recommendation_api/.python_packages/lib/site-packages recommendation_api/vendor/scikit_surprise-1.1.3-cp310-cp310-linux_x86_64.whl
 
       # Optional: Add step to run tests here
