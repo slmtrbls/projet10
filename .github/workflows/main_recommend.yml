@@ -39,8 +39,8 @@ jobs:
           rm -rf recommendation_api/.python_packages
           python -m pip install --upgrade pip
           mkdir -p recommendation_api/.python_packages/lib/site-packages
-          pip install --target recommendation_api/.python_packages/lib/site-packages pip setuptools wheel cython
-          pip install --no-build-isolation --target recommendation_api/.python_packages/lib/site-packages \
+          pip install --target recommendation_api/.python_packages/lib/site-packages pip setuptools wheel cython "numpy<2"
+          pip install --use-pep517 --target recommendation_api/.python_packages/lib/site-packages \
             azure-functions==1.15.0 \
             numpy==1.26.4 \
             pandas==2.2.2 \
