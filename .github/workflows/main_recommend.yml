@@ -29,11 +29,11 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Install dependencies
+      - name: Install dependencies into package
         run: |
-          python -m venv venv
-          source venv/bin/activate
-          pip install -r recommendation_api/requirements.txt
+          python -m pip install --upgrade pip
+          mkdir -p recommendation_api/.python_packages/lib/site-packages
+          pip install --target recommendation_api/.python_packages/lib/site-packages -r recommendation_api/requirements.txt
 
       # Optional: Add step to run tests here
 
