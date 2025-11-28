@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from pathlib import Path
 import pickle
 from typing import List, Optional
@@ -7,56 +8,72 @@ from typing import List, Optional
 import azure.functions as func
 import numpy as np
 import pandas as pd
+from azure.core.exceptions import ResourceNotFoundError
+from azure.storage.blob import BlobClient
 
 
-TMP_DIR = Path("/tmp")
-EMBED_PATH = TMP_DIR / "embeddings_pca.pkl"
-MODEL_PATH = TMP_DIR / "svd_best_model_pca.pkl"
+app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
-# Caches chargés au premier appel (après cold start)
+TMP_DIR = Path("/tmp/recommendation")
+EMBED_FILE = TMP_DIR / "embeddings_pca.pkl"
+MODEL_FILE = TMP_DIR / "svd_best_model_pca.pkl"
+
+MODELS_CONTAINER = os.getenv("MODELS_CONTAINER", "models")
+EMBED_BLOB_NAME = os.getenv("EMBEDDINGS_BLOB", "embeddings_pca.pkl")
+MODEL_BLOB_NAME = os.getenv("MODEL_BLOB", "svd_best_model_pca.pkl")
+
+MAX_CANDIDATES = 20000
+DEFAULT_TOP_K = 5
+
 CACHED_EMBEDDINGS: Optional[pd.DataFrame] = None
 CACHED_MODEL = None
 CACHED_ITEMS: Optional[np.ndarray] = None
 
-# Nombre maximum d'articles scorés (limite pour contenir les temps de réponse)
-MAX_CANDIDATES = 20000
-DEFAULT_TOP_K = 5 # Nombre de recommandations à générer
+
+def _get_connection_string() -> str:
+    conn_str = os.getenv("AzureWebJobsStorage")
+    if not conn_str:
+        raise RuntimeError("AzureWebJobsStorage est manquante.")
+    return conn_str
 
 
-def _ensure_artifacts(
-    embedding_blob: func.InputStream, model_blob: func.InputStream
-) -> None:
-    """
-    Charge les blobs d'embeddings et de modèle dans /tmp puis en mémoire
-    (opération effectuée une seule fois tant que l'instance reste chaude).
-    """
+def _download_blob(blob_name: str, destination: Path) -> None:
+    logging.info("Téléchargement du blob '%s/%s'.", MODELS_CONTAINER, blob_name)
+    client = BlobClient.from_connection_string(
+        conn_str=_get_connection_string(),
+        container_name=MODELS_CONTAINER,
+        blob_name=blob_name,
+    )
+    try:
+        data = client.download_blob().readall()
+    except ResourceNotFoundError as exc:
+        raise FileNotFoundError(f"Blob '{blob_name}' introuvable.") from exc
+
+    TMP_DIR.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(data)
+
+
+def _load_artifacts(force: bool = False) -> None:
     global CACHED_EMBEDDINGS, CACHED_MODEL
 
-    if CACHED_EMBEDDINGS is None:
-        logging.info("Chargement des embeddings PCA depuis le blob …")
-        TMP_DIR.mkdir(parents=True, exist_ok=True)
-        EMBED_PATH.write_bytes(embedding_blob.read())
-        CACHED_EMBEDDINGS = pd.read_pickle(EMBED_PATH)
+    if force or CACHED_EMBEDDINGS is None:
+        _download_blob(EMBED_BLOB_NAME, EMBED_FILE)
+        CACHED_EMBEDDINGS = pd.read_pickle(EMBED_FILE)
         logging.info("Embeddings chargés : %d items.", len(CACHED_EMBEDDINGS))
 
-    if CACHED_MODEL is None:
-        logging.info("Chargement du modèle SVD depuis le blob …")
-        MODEL_PATH.write_bytes(model_blob.read())
-        with open(MODEL_PATH, "rb") as f:
-            bundle = pickle.load(f)
-        CACHED_MODEL = bundle.get("model")
-        if CACHED_MODEL is None:
-            raise ValueError("Le pickle ne contient pas la clé 'model'.")
+    if force or CACHED_MODEL is None:
+        _download_blob(MODEL_BLOB_NAME, MODEL_FILE)
+        with MODEL_FILE.open("rb") as handle:
+            bundle = pickle.load(handle)
+        model = bundle.get("model")
+        if model is None:
+            raise ValueError("Le pickle ne contient pas de clé 'model'.")
+        CACHED_MODEL = model
         logging.info("Modèle SVD chargé.")
 
 
 def _ensure_candidates() -> np.ndarray:
-    """
-    Prépare la liste des items candidats à scorer.
-    On limite à MAX_CANDIDATES pour éviter un temps de réponse trop long.
-    """
     global CACHED_ITEMS
-
     if CACHED_ITEMS is None:
         assert CACHED_EMBEDDINGS is not None
         items = CACHED_EMBEDDINGS.index.to_numpy(dtype=np.int64)
@@ -68,9 +85,6 @@ def _ensure_candidates() -> np.ndarray:
 
 
 def _parse_user_id(req: func.HttpRequest) -> int:
-    """
-    Récupère l'identifiant utilisateur depuis la query string ou le corps JSON.
-    """
     user_id = req.params.get("user_id")
     if user_id is None:
         try:
@@ -89,9 +103,6 @@ def _parse_user_id(req: func.HttpRequest) -> int:
 
 
 def _parse_top_k(req: func.HttpRequest) -> int:
-    """
-    Permet de configurer top_k depuis la requête (facultatif).
-    """
     top_k = req.params.get("top_k")
     if top_k is None:
         try:
@@ -111,9 +122,6 @@ def _parse_top_k(req: func.HttpRequest) -> int:
 
 
 def _recommend_for_user(user_id: int, top_k: int) -> List[int]:
-    """
-    Applique le modèle SVD sur la liste d'items candidats.
-    """
     assert CACHED_MODEL is not None
     candidates = _ensure_candidates()
 
@@ -132,14 +140,18 @@ def _recommend_for_user(user_id: int, top_k: int) -> List[int]:
     return [item for item, _ in scores[:top_k]]
 
 
-def main(
-    req: func.HttpRequest,
-    embedding_blob: func.InputStream,
-    model_blob: func.InputStream,
-) -> func.HttpResponse:
+@app.on_startup()
+def warmup(context: func.Context) -> None:
+    logging.info("Warmup : pré-chargement des artefacts depuis le Storage.")
+    _load_artifacts(force=True)
+
+
+@app.function_name(name="recommend")
+@app.route(route="recommendations", methods=["GET", "POST"])
+def recommend(req: func.HttpRequest) -> func.HttpResponse:
     logging.info("Requête reçue pour la génération de recommandations.")
     try:
-        _ensure_artifacts(embedding_blob, model_blob)
+        _load_artifacts()
         user_id = _parse_user_id(req)
         top_k = _parse_top_k(req)
         recommendations = _recommend_for_user(user_id, top_k)
@@ -148,7 +160,7 @@ def main(
     except ValueError as exc:
         logging.warning("Erreur de validation : %s", exc)
         return func.HttpResponse(str(exc), status_code=400)
-    except Exception as exc:  # pragma: no cover - logs serve production debugging
+    except Exception:
         logging.exception("Erreur inattendue.")
         return func.HttpResponse("Erreur interne.", status_code=500)
 
