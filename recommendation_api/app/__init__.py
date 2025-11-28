@@ -20,7 +20,7 @@ CACHED_ITEMS: Optional[np.ndarray] = None
 
 # Nombre maximum d'articles scorés (limite pour contenir les temps de réponse)
 MAX_CANDIDATES = 20000
-DEFAULT_TOP_K = 5
+DEFAULT_TOP_K = 5 # Nombre de recommandations à générer
 
 
 def _ensure_artifacts(
