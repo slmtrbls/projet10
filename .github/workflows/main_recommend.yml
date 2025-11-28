@@ -38,8 +38,8 @@ jobs:
         run: |
           rm -rf recommendation_api/.python_packages
           python -m pip install --upgrade pip
+          python -m pip install setuptools wheel cython "numpy<2"
           mkdir -p recommendation_api/.python_packages/lib/site-packages
-          pip install --target recommendation_api/.python_packages/lib/site-packages pip setuptools wheel cython "numpy<2"
           pip install --no-build-isolation --target recommendation_api/.python_packages/lib/site-packages \
             azure-functions==1.15.0 \
             numpy==1.26.4 \
