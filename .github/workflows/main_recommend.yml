@@ -41,7 +41,7 @@ jobs:
           python -m pip install setuptools wheel cython "numpy<2"
           mkdir -p recommendation_api/.python_packages/lib/site-packages
           pip install --no-build-isolation --target recommendation_api/.python_packages/lib/site-packages \
-            azure-functions==1.15.0 \
+            azure-functions==1.18.0 \
             numpy==1.26.4 \
             pandas==2.2.2 \
             scipy==1.11.4 \
