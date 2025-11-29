@@ -140,10 +140,7 @@ def _recommend_for_user(user_id: int, top_k: int) -> List[int]:
     return [item for item, _ in scores[:top_k]]
 
 
-@app.on_startup()
-def warmup(context: func.Context) -> None:
-    logging.info("Warmup : pré-chargement des artefacts depuis le Storage.")
-    _load_artifacts(force=True)
+
 
 
 @app.function_name(name="recommend")
@@ -163,4 +160,12 @@ def recommend(req: func.HttpRequest) -> func.HttpResponse:
     except Exception:
         logging.exception("Erreur inattendue.")
         return func.HttpResponse("Erreur interne.", status_code=500)
+
+
+# Préchargement des artefacts au chargement du module (warmup)
+try:
+    _load_artifacts(force=True)
+    logging.info("Artefacts préchargés lors du chargement du module.")
+except Exception:
+    logging.exception("Échec du préchargement des artefacts au démarrage.")
 
